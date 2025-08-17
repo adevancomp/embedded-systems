@@ -1,0 +1,15 @@
+/ {
+  	aliases {
+  			accel0 = &bma;
+  	};
+};
+
+&i2c1 {
+    status = "okay";
+    pinctrl-0 = <&i2c1_scl_pb6 &i2c1_scl_pb7>; /*tente inverter as ordens e veja se dá certo*/
+    pinctrl-names = "default";
+	bma: bma4xx@15 {
+		compatible = "bosch,bma4xx";
+		reg = <0x15>;
+	};
+};
