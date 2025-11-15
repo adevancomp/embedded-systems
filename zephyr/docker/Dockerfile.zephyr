@@ -1,0 +1,68 @@
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+ARG MY_ZEPHYR_PROJECT_ARG
+
+ENV MY_ZEPHYR_PROJECT=$MY_ZEPHYR_PROJECT_ARG
+
+RUN printf '%s\n' 'Acquire::https::Verify-Peer "false";' 'Acquire::https::Verify-Host "false";' > /etc/apt/apt.conf.d/99disable-ssl
+
+RUN sed -i 's|https://archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list || true \
+ && sed -i 's|https://security.ubuntu.com|http://security.ubuntu.com|g' /etc/apt/sources.list || true
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    software-properties-common \
+    git \
+    gnupg2 \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN git config --system http.sslVerify false
+
+ENV GIT_SSL_NO_VERIFY=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org"
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV REQUESTS_CA_BUNDLE="" \
+    SSL_CERT_FILE=""
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    python3.10 python3.10-venv python3.10-dev python3-pip nano \
+    cmake ninja-build gperf ccache dfu-util device-tree-compiler wget \
+    xz-utils file make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1 \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN python3.10 -m pip install --upgrade pip setuptools wheel --trusted-host pypi.org --trusted-host files.pythonhosted.org || true
+
+WORKDIR /zephyrproject
+COPY zephyrproject /zephyrproject
+
+RUN mkdir -p /root/STMicroelectronics/STM32Cube/STM32CubeProgrammer
+
+COPY STM32CubeProgrammer /root/STMicroelectronics/STM32Cube/STM32CubeProgrammer/
+
+RUN chmod -R +x /root/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
+
+RUN echo "Fixing old paths in project..." \
+ && OLD_PATH=MY_ZEPHYR_PROJECT \
+ && NEW_PATH='/zephyrproject' \
+ && grep -RIl "$OLD_PATH" /zephyrproject 2>/dev/null | while read -r file; do \
+      echo "Fixing: $file"; \
+      sed -i "s|$OLD_PATH|$NEW_PATH|g" "$file"; \
+    done \
+ && echo "Path fix completed."
+
+ENV ZEPHYR_BASE=/zephyrproject/zephyr
+ENV ZEPHYR_SDK_INSTALL_DIR=/zephyrproject/sdk
+ENV PATH=$ZEPHYR_BASE/scripts:$PATH
+ENV PATH="/root/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin:${PATH}"
+
+ENV WGETRC=/root/.wgetrc
+RUN printf '%s\n' 'check_certificate = off' > /root/.wgetrc
+
+RUN echo "if [ -f /zephyrproject/.venv/bin/activate ]; then source /zephyrproject/.venv/bin/activate; fi" >> /root/.bashrc \
+ && echo "if [ -f /zephyrproject/zephyr/zephyr-env.sh ]; then source /zephyrproject/zephyr/zephyr-env.sh; fi" >> /root/.bashrc
+
+CMD ["/bin/bash"]
